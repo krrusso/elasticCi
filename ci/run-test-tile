@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+set -e
+
+echo "Test is not available yet..."
+
+project_dir=tile-repo
+concourse_common_dir=$project_dir/ci/test-assets/common-helpers
+
+source $concourse_common_dir/utils/cf-helpers.sh
+
+cf_authenticate_and_target
+cf_target_org_and_space system test
+
+cf_create_service a-elasticsearch default es
+exit_on_error "Error creating service"
+
+pushd $project_dir/ci/test-assets/app
+  cf push test-app
+popd
+
+cf bind-service test-app es
+APP_ENV=$(cf env test-app)
+echo $APP_ENV
+cf unbind-service test-app es

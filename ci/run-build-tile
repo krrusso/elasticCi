@@ -1,0 +1,8 @@
+#!/usr/bin/dumb-init /bin/bash
+
+
+cd tile-repo
+bosh create release --with-tarball --name elasticsearch --version 0.9
+tile build 0.9.0
+
+mv product/elasticsearch-*.pivotal ../tiles

@@ -1,0 +1,142 @@
+---
+resources:
+- name: tile-repo
+  type: git
+  source:
+    uri: {{git-uri}}
+    branch: {{git-branch}}
+    private_key: {{git-key}}
+
+- name: tile
+  type: s3
+  source:
+    versioned_file: elasticsearch/elasticsearch-0.9.0.pivotal
+    access_key_id: {{s3-access-key}}
+    secret_access_key: {{s3-secret}}
+    region_name: {{s3-region}}
+    bucket: {{s3-bucket}}
+
+jobs:
+- name: build-tile
+  plan:
+  - get: tile-repo
+  - task: build-tile
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: andreikrasnitski/tile-pipeline
+      inputs:
+      - name: tile-repo
+      outputs:
+      - name: tiles
+      run:
+        path: ./tile-repo/ci/run-build-tile
+        args: []
+
+  - put: tile
+    params:
+      file: tiles/elasticsearch-*.pivotal
+      acl: public-read
+
+- name: verify-pcf
+  plan:
+  - aggregate:
+    - get: tile
+      trigger: true
+      passed: [build-tile]
+    - get: tile-repo
+  - task: run-verify-pcf
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: andreikrasnitski/tile-pipeline
+      inputs:
+      - name: tile
+      - name: tile-repo
+      run:
+        path: ./tile-repo/ci/run-verify-pcf
+        args: []
+      params: &ops-manager-creds
+        OPS_MANAGER_URL: {{ops-manager-url}}
+        OPS_MANAGER_USERNAME: {{ops-manager-username}}
+        OPS_MANAGER_PASSWORD: {{ops-manager-password}}
+
+- name: deploy-tile
+  plan:
+  - aggregate:
+    - get: tile
+      passed: [verify-pcf]
+      trigger: true
+    - get: tile-repo
+    # - get: missing-properties
+  - task: run-deploy-tile
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: andreikrasnitski/tile-pipeline
+      inputs:
+      - name: tile
+      - name: tile-repo
+      run:
+        path: ./tile-repo/ci/run-deploy-tile
+        args:
+        - tile-repo
+        - tile
+      params: *ops-manager-creds
+
+- name: test-tile
+  plan:
+  - aggregate:
+    - get: tile
+      passed: [deploy-tile]
+      trigger: true
+    - get: tile-repo
+  - task: run-test-tile
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: allomov/cf-cli
+      inputs:
+      - name: tile
+      - name: tile-repo
+      run:
+        path: ./tile-repo/ci/run-test-tile
+        args:
+        - tile-repo
+        - tile
+      params:
+        CF_API_URL: {{cf-url}}
+        CF_ADMIN_USERNAME: {{cf-username}}
+        CF_ADMIN_PASSWORD: {{cf-password}}
+
+- name: remove-tile
+  plan:
+  - aggregate:
+    - get: tile
+      trigger: true
+      passed: [test-tile]
+    - get: tile-repo
+  - task: run-remove-tile
+    config:
+      platform: linux
+      image_resource:
+        type: docker-image
+        source:
+          repository: andreikrasnitski/tile-pipeline
+      inputs:
+      - name: tile
+      - name: tile-repo
+      run:
+        path: ./tile-repo/ci/run-remove-tile
+        args:
+        - tile-repo
+        - tile
+      params: *ops-manager-creds

@@ -1,0 +1,15 @@
+#!/usr/bin/dumb-init /bin/bash
+
+echo "===> Setting up PCF metadata... <==="
+cat > metadata << EOF
+---
+opsmgr:
+  url: "$OPS_MANAGER_URL"
+  username: "$OPS_MANAGER_USERNAME"
+  password: "$OPS_MANAGER_PASSWORD"
+EOF
+
+set -e
+echo "===> Verifying PCF connection... <==="
+pcf version
+pcf products

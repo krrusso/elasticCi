@@ -1,0 +1,47 @@
+#!/usr/bin/dumb-init /bin/bash
+
+set -e
+
+REPO_DIR="$( cd "$1" && pwd )"
+TILE_DIR="$( cd "$2" && pwd )"
+
+TILE_FILE=`cd "${TILE_DIR}"; ls *.pivotal`
+if [ -z "${TILE_FILE}" ]; then
+	echo "No files matching ${TILE_DIR}/*.pivotal"
+	ls -lR "${TILE_DIR}"
+	exit 1
+fi
+
+PRODUCT=`echo "${TILE_FILE}" | sed "s/-[^-]*$//"`
+VERSION=`echo "${TILE_FILE}" | sed "s/.*-//" | sed "s/\.pivotal\$//"`
+
+echo "===> Setting up PCF metadata... <==="
+cat > metadata << EOF
+---
+opsmgr:
+  url: "$OPS_MANAGER_URL"
+  username: "$OPS_MANAGER_USERNAME"
+  password: "$OPS_MANAGER_PASSWORD"
+EOF
+
+echo "===> Checking available PCF tiles... <==="
+pcf products
+
+if ! pcf is-installed "${PRODUCT}" ; then
+	echo "${PRODUCT} not installed - skipping removal"
+	exit 0
+fi
+
+echo "===> Uninstalling PCF tile... <==="
+pcf uninstall ${PRODUCT}
+
+echo "===> Applying Changes... <==="
+pcf apply-changes
+
+echo "===> Checking available PCF tiles... <==="
+pcf products
+
+if pcf is-installed "${PRODUCT}" ; then
+	echo "${PRODUCT} remains installed - remove failed"
+	exit 1
+fi
